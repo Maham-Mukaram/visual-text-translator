@@ -1,0 +1,278 @@
+import pytesseract
+from googletrans import Translator
+import  numpy as np
+import cv2
+from matplotlib import pyplot
+from matplotlib.patches import Rectangle
+from PIL import Image
+from PIL import ImageFont
+from PIL import ImageDraw
+
+# tesseract library path
+pytesseract.pytesseract.tesseract_cmd = "C:\Program Files\Tesseract-OCR/tesseract.exe"
+
+# applying clustering
+def clust(img):
+    h,w,q=img.shape
+    # initializing the output image
+    box_to_be_replaced = np.zeros([h,w,q], dtype=np.uint8)
+    # RESHAPING
+    pixel_values = img.reshape((-1, 3))
+    # CHANGING THE DATA TYPE
+    pixel_values = np.float32(pixel_values)
+
+    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 100, 0.2)
+    # 2 LEVEL box_to_be_replacedTERING
+    K = 2
+    # box_to_be_replacedTERING
+    _, labels, (centers) = cv2.kmeans(pixel_values, K, None, criteria, 10, cv2.KMEANS_RANDOM_CENTERS)
+    centers = np.uint8(centers)
+    # calculating the classes with more no of labels
+    # counters for label 0 and label 1
+    counter1=counter0=0
+
+    # counting label enteries
+    for i in range(len(labels)):
+        if labels[i]==1:
+            counter1=counter1+1
+        else:
+            counter0=counter0+1
+
+    labels = labels.flatten()
+    # taking value of mean of label with more no of enteries
+    if counter0>counter1:
+        replace = centers[0]
+
+    else:
+        replace = centers[1]
+
+    # replacing values
+    for i in range(0,h):
+        for j in range(0,w):
+            box_to_be_replaced[i][j]=replace
+
+    # box_to_be_replacedtered image
+    box_clustered_img = centers[labels.flatten()]
+    box_clustered_img = box_clustered_img.reshape(img.shape)
+
+    # calculating threshold to detect text
+    box_text_threshold_img = cv2.cvtColor(box_clustered_img, cv2.COLOR_BGR2GRAY)
+    ret1, box_text_threshold_img = cv2.threshold(box_text_threshold_img, 128, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)
+
+    return box_clustered_img,box_to_be_replaced,box_text_threshold_img
+
+
+def pixel_Record(thres_img,replace_img,original_crop):
+    # pixels arrray stores the coordinates of the text in the cropped region
+    pixels=[]
+
+    h,w=thres_img.shape
+    # blurring the thresholding text region to apply smoothing effect
+    GaussianBlurimg = cv2.GaussianBlur(thres_img, (151, 151), cv2.BORDER_DEFAULT)
+    GaussianBlurimg = cv2.GaussianBlur(GaussianBlurimg, (151, 151), cv2.BORDER_DEFAULT)
+    GaussianBlurimg = cv2.GaussianBlur(GaussianBlurimg, (151, 151), cv2.BORDER_DEFAULT)
+
+    cv2.imshow("GaussianBlurimg", GaussianBlurimg)
+    # taking threshold
+    ret1, thres_img = cv2.threshold(GaussianBlurimg, 200, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)
+    cv2.imshow("thres_img", thres_img)
+
+    # taking the pixels of text
+    for i in range(0,h):
+        for j in range(0,w):
+            if thres_img[i][j]==0:
+                pixels.append([i,j])
+
+
+    # enlarging the text area so that the overlapped region gives better results
+    pixels1=[]
+    pixels2=[]
+    pixels3=[]
+    pixels4=[]
+
+
+    for l in range(len(pixels)):
+        rep=pixels[l][0]-5
+        pixels1.append([rep,pixels[l][1]])
+
+    for l in range(len(pixels)):
+        rep=pixels[l][0]+5
+        pixels2.append([rep,pixels[l][1]])
+
+    for l in range(len(pixels)):
+        rep=pixels[l][1]-5
+        pixels3.append([pixels[l][0],rep,])
+
+    for l in range(len(pixels)):
+        rep=pixels[l][1]+5
+        pixels4.append([pixels[l][0],rep,])
+
+
+
+    r,c,q =original_crop.shape
+
+    replace_pixelval=replace_img[0][0]
+    for i,j in pixels:
+        if i<r and j<c:
+            original_crop[i][j]=replace_pixelval
+
+    for i,j in pixels1:
+        if i<r and j<c:
+            original_crop[i][j]=replace_pixelval
+
+    for i,j in pixels2:
+        if i<r and j<c:
+            original_crop[i][j]=replace_pixelval
+
+    for i,j in pixels3:
+        if i<r and j<c:
+            original_crop[i][j]=replace_pixelval
+
+    for i,j in pixels4:
+        if i<r and j<c:
+            original_crop[i][j]=replace_pixelval
+
+
+    cv2.imshow("text hidden crop", original_crop)
+    return original_crop
+
+#MAIN:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+original_image = cv2.imread("D:\DIP PROJECT\COORD_TXT\img.jpg"  )
+cv2.imshow("original_image",original_image)
+# original_image = cv2.cvtColor(original_image, cv2.COLOR_BGR2RGB)
+cv2.imshow("original_imagebgr",original_image)
+
+# reading in the rectangular coordinates values from the txt file
+f=open("D:\DIP PROJECT\COORD_TXT\img.txt", "r")
+y1=f.readline()
+x1=f.readline()
+y2=f.readline()
+x2=f.readline()
+y1=int(y1)
+x1=int(x1)
+y2=int(y2)
+x2=int(x2)
+print('COORDINATES:')
+print('y1',y1)
+print('x1',x1)
+print('y2',y2)
+print('x2',x2)
+h,w,d=original_image.shape
+
+#ADJUSTING COORDINATES TO CATER FOR THE SHORT COMINGS OF THE MRCNN
+if y1 - 10 < 0:
+    y11 = 0
+else:
+    y11 = y1 - 10
+if y2 + 10 > h:
+    y22 = h
+else:
+    y22 = y2 + 10
+if x1 - 10 < 0:
+    x11 = 0
+else:
+    x11 = x1 - 10
+if x2 + 10 > w:
+    x22 = w
+else:
+    x22 = x2 + 10
+
+# DISPLAYING RECTANGLE ON IMAGE
+original_image1 = cv2.cvtColor(original_image, cv2.COLOR_BGR2RGB)
+
+width, height = x22 - x11, y22 - y11
+figure, ax = pyplot.subplots(1)
+ax.imshow(original_image1)
+rect = Rectangle((x1, y1), width, height, fill=False, color='red')
+ax.add_patch(rect)
+pyplot.show()
+
+# CROP IMAGE
+
+crop_img = original_image[y11:y11 + height, x11:x11 + width]
+cv2.imshow("crop_img", crop_img)
+
+
+#CLUSTERING
+box_clustered_img,box_to_be_replaced,count_pixels=clust(crop_img)
+cv2.imshow("box_clustered_img",box_clustered_img)
+cv2.imshow("box_to_be_replaced",box_to_be_replaced)
+cv2.imshow("box_text_threshold_img",count_pixels)
+
+# replacing text from the concerned region
+original_crop=pixel_Record(count_pixels,box_to_be_replaced,crop_img)
+
+# REPLACING IMAGE WITH box_to_be_replacedTERED BOX
+output_replace_box_to_be_replaced=original_image
+output_replace_box_to_be_replaced[y11:y11 + height, x11:x11 + width]=original_crop
+cv2.imshow("output_replace_box_to_be_replaced",output_replace_box_to_be_replaced)
+
+
+# draw translation for each text box detected that has confidence score >0.95
+# box_to_be_replacedTER FUNCTION OUTPUT (RGB, BW, OUT)
+BW=count_pixels
+RGB=output_replace_box_to_be_replaced
+# BW = cv2.bitwise_not(BW)
+cv2.imshow("GRAY", BW)
+# cv2.waitKey(0)
+# edit thresholded image so that pytesseract.image_to_string() is able to read text
+img = cv2.erode(BW, (11, 11), iterations=1)
+img = cv2.resize(img, (0, 0), fx=3, fy=3)
+img = cv2.medianBlur(img, 9)
+img = cv2.erode(img, (11, 11), iterations=3)
+img = cv2.dilate(img, (5, 5), iterations=1)
+cv2.imshow("IMAGE FOR PYTESSERACT", img)
+# cv2.waitKey(0)
+out_below = pytesseract.image_to_string(img, lang='eng', config='--psm 6')
+print("TEXT READ:", out_below)
+# print image after erasing text
+after_box_to_be_replacedtering = original_image[:]
+after_box_to_be_replacedtering[y11:y22, x11:x22] = RGB[y11:y22, x11:x22]
+RGB=RGB[y11:y22, x11:x22]
+cv2.imshow("AFTER K MEANS box_to_be_replacedTERING", after_box_to_be_replacedtering)
+# cv2.waitKey(0)
+# replace text with translated text
+h, w, s = RGB.shape
+RGB = cv2.cvtColor(RGB, cv2.COLOR_BGR2RGB)
+RGB = Image.fromarray(RGB)
+draw = ImageDraw.Draw(RGB)
+# using bold ariel font
+font = ImageFont.truetype("C:\Windows\Fonts\ARLRDBD.ttf", int(w / 6))
+W, H = draw.textsize(out_below, font=font)
+para = out_below.split("\n")
+# input translated language
+lang = str(input("PLEASE GIVE LANGUAGE OF TRANSLATION (French/German/Spanish): "))
+current_h, pad = 5, 10
+for line in para:
+    translator = Translator()
+    translation=[]
+    if (lang == 'french' or lang == 'French'):
+        translation = translator.translate(line, src='en', dest='fr')
+    elif (lang == 'german' or lang == 'German'):
+        translation = translator.translate(line, src='en', dest='de')
+    elif (lang == 'spanish' or lang == 'Spanish'):
+        translation = translator.translate(line, src='en', dest='es')
+
+    translation=translation.text
+    print(translation)
+    if line.islower():
+        translation = translation.lower()
+    else:
+        translation = translation.upper()
+    print("TRANSLATED: ", translation)
+    W, H = draw.textsize(translation, font=font)
+    n = 1
+    # adjust font size of text according to image
+    while w - W < 0:
+        font = ImageFont.truetype("C:\Windows\Fonts\ARLRDBD.ttf", int(w / 3) - n)
+        W, H = draw.textsize(translation, font=font)
+        n = n + 1
+    draw.text(((w - W) / 2, current_h), translation, (0, 0, 0), font=font)
+    font = ImageFont.truetype("C:\Windows\Fonts\ARLRDBD.ttf", int(w / 3))
+    current_h += H + pad
+# output image after replacing text on image
+out = cv2.cvtColor(np.array(RGB), cv2.COLOR_RGB2BGR)
+original_image[y11:y22, x11:x22] = out
+cv2.imshow("FINAL", original_image)
+cv2.waitKey(0)
